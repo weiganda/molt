@@ -313,8 +313,8 @@ If you use Molt in your work, please cite the archived release:
   year      = {2026},
   version   = {v1.0.0},
   publisher = {Zenodo},
-  doi       = {10.5281/zenodo.XXXXXXX},
-  url       = {https://doi.org/10.5281/zenodo.XXXXXXX}
+  doi       = {10.5281/zenodo.22651110},
+  url       = {https://github.com/weiganda/molt}
 }
 ```
 
