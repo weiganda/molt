@@ -1,12 +1,12 @@
 cff-version: 1.2.0
-title: "Molt: Ab Initio Complex Dielectric Function from AIMD Dipole Trajectories"
+title: "Molt: Ab Initio Complex Dielectric Function from MD Dipole Trajectories"
 message: "If you use this software, please cite it using the metadata from this file."
 type: software
 authors:
   - family-names: Weigand
     given-names: Alysse
     affiliation: "University of Missouri – Kansas City"
-    # orcid: "https://orcid.org/0000-0000-0000-0000"
+    # orcid: "https://orcid.org/0009-0007-0504-5186"
 abstract: >-
   Molt computes the complex dielectric function from VASP ab initio molecular
   dynamics trajectories. It builds a quasi-dipole moment time series, computes
@@ -30,7 +30,7 @@ keywords:
   - VASP
   - computational physics
 version: 1.0.0
-date-released: 2026-01-01
+date-released: 2026-09-07
 license: ECL-2.0
 repository-code: "https://github.com/weiganda/molt"
 doi: 10.5281/zenodo.XXXXXXX
