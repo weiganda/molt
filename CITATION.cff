@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+title: "Molt: Ab Initio Complex Dielectric Function from AIMD Dipole Trajectories"
+message: "If you use this software, please cite it using the metadata from this file."
+type: software
+authors:
+  - family-names: Weigand
+    given-names: Alysse
+    affiliation: "University of Missouri – Kansas City"
+    # orcid: "https://orcid.org/0000-0000-0000-0000"
+abstract: >-
+  Molt computes the complex dielectric function from VASP ab initio molecular
+  dynamics trajectories. It builds a quasi-dipole moment time series, computes
+  the dipole autocorrelation function, and applies a numerical derivative
+  followed by a fast Fourier transform to obtain the real and imaginary parts of
+  the permittivity, along with derived optical properties. Because the method
+  rests on the fluctuation-dissipation theorem rather than a harmonic expansion,
+  the accessible frequency range is set by trajectory length and sampling
+  interval rather than by the formalism, reaching the infrared through microwave
+  regimes with no experimental input and no Berry-phase polarization. The
+  repository also includes VASP validation tooling for structural relaxation,
+  AIMD timestep, and Nose-Hoover thermostat mass.
+keywords:
+  - dielectric function
+  - permittivity
+  - ab initio molecular dynamics
+  - fluctuation-dissipation theorem
+  - dipole autocorrelation
+  - infrared spectroscopy
+  - microwave
+  - VASP
+  - computational physics
+version: 1.0.0
+date-released: 2026-01-01
+license: ECL-2.0
+repository-code: "https://github.com/weiganda/molt"
+doi: 10.5281/zenodo.XXXXXXX
