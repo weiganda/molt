@@ -171,6 +171,20 @@ def read_energies(outcar_lines):
     return energies
 
 
+def read_temperatures(outcar_lines):
+    """Instantaneous temperature in K, one value per MD step.
+
+    VASP prints this on the EKIN_LAT line of each ionic step, in the form
+    (temperature  298.63 K).
+    """
+    temps = []
+    for line in outcar_lines:
+        m = re.search(r"\(temperature\s+([-\d.eE+]+)\s*K\)", line)
+        if m:
+            temps.append(float(m.group(1)))
+    return temps
+
+
 def read_ensemble(directory, outcar_lines):
     """Recover MDALGO / ANDERSEN_PROB / SMASS so a thermostatted run can be
     flagged. Drift analysis is only meaningful without a thermostat."""
@@ -262,6 +276,11 @@ def analyse_run(directory, drop_fraction):
         raise ValueError("only %d MD steps found in %s; need at least 20"
                          % (energies.size, outcar))
 
+    temps = np.asarray(read_temperatures(lines), dtype=float)
+    if temps.size and temps.size != energies.size:
+        # An interrupted final step can leave one list one entry longer.
+        temps = temps[:min(temps.size, energies.size)]
+
     info = read_ensemble(directory, lines)
     nve = is_nve(info)
 
@@ -278,6 +297,16 @@ def analyse_run(directory, drop_fraction):
     i0 = int(drop_fraction * nsteps)
     ss_steps = steps[i0:]
     ss_energies = energies[i0:]
+
+    # Temperature is averaged over the same window, since that is the portion
+    # of the trajectory the dipole moments will be taken from.
+    if temps.size:
+        i0_t = int(drop_fraction * temps.size)
+        ss_temps = temps[i0_t:]
+        t_mean = float(ss_temps.mean())
+        t_std = float(ss_temps.std(ddof=1)) if ss_temps.size > 1 else 0.0
+    else:
+        i0_t, t_mean, t_std = None, None, None
 
     coeffs, cov = np.polyfit(ss_steps, ss_energies, 1, cov=True)
     slope = coeffs[0]                                   # eV per step
@@ -301,6 +330,10 @@ def analyse_run(directory, drop_fraction):
         "nsteps": nsteps,
         "t_total_ps": t_total_ps,
         "energies": energies,
+        "temps": temps,
+        "temp_start": i0_t,
+        "t_mean": t_mean,
+        "t_std": t_std,
         "t_ps": t_ps,
         "steps": steps,
         "fit_start": i0,
@@ -346,6 +379,26 @@ def print_report(runs, drop_fraction):
           % (DRIFT_EXCELLENT, DRIFT_ACCEPTABLE))
     print("------------------------------------------\n")
 
+    if any(r["t_mean"] is not None for r in runs):
+        print("---------------- Temperature --------------")
+        header = ("%-9s %10s %10s %10s"
+                  % ("POTIM/fs", "frames", "<T>/K", "sd/K"))
+        print(header)
+        print("-" * len(header))
+        for r in runs:
+            if r["t_mean"] is None:
+                print("%-9.3f %10s %10s %10s"
+                      % (r["potim"], "--", "--", "--"))
+                continue
+            print("%-9.3f %10d %10.2f %10.2f"
+                  % (r["potim"], r["temps"].size - r["temp_start"],
+                     r["t_mean"], r["t_std"]))
+        print("-" * len(header))
+        print("averaged over the last %d%% of the trajectory; this is the\n"
+              "value to use in the linear response prefactor"
+              % round((1.0 - drop_fraction) * 100))
+        print("------------------------------------------\n")
+
     # The ceiling is the largest timestep such that every smaller value also
     # passes. Taking the largest passing value on its own would be wrong when
     # the drift is not monotonic: a point that scatters just under the
@@ -376,14 +429,19 @@ def write_csv(path, runs):
         w = csv.writer(fh)
         w.writerow(["directory", "potim_fs", "natoms", "nsteps", "time_ps",
                     "dE_endpoint_eV", "drift_endpoint_eV_atom_ps",
-                    "drift_slope_eV_atom_ps", "drift_slope_err", "verdict"])
+                    "drift_slope_eV_atom_ps", "drift_slope_err", "verdict",
+                    "T_avg_K", "T_std_K", "T_frames"])
         for r in runs:
             w.writerow([r["directory"], "%.4f" % r["potim"], r["natoms"],
                         r["nsteps"], "%.4f" % r["t_total_ps"],
                         "%.6f" % r["dE_endpoint"],
                         "%.6e" % r["drift_endpoint"],
                         "%.6e" % r["drift_slope"],
-                        "%.6e" % r["drift_slope_err"], r["verdict"]])
+                        "%.6e" % r["drift_slope_err"], r["verdict"],
+                        "" if r["t_mean"] is None else "%.4f" % r["t_mean"],
+                        "" if r["t_std"] is None else "%.4f" % r["t_std"],
+                        "" if r["t_mean"] is None
+                        else r["temps"].size - r["temp_start"]])
 
 
 def write_tex_table(path, runs, label):
@@ -452,14 +510,15 @@ def _sci(x):
 # Figure
 ##################################################
 
-
 def make_figure(runs, label, stem, dpi):
     """Panel (a): energy per atom relative to its starting value against ionic
     step, so every run occupies the same horizontal range and the smallest
     timestep is visible. Note that the slopes there are per step rather than
     per picosecond.
     Panel (b): slope drift against POTIM, with the criterion bands. Drawn
-    only for a sweep, where it is the result of the validation."""
+    only for a sweep, where it is the result of the validation.
+    The temperature trace is written as a separate figure by
+    make_temp_figure, so that each figure is large enough to read on the page."""
     sweep = len(runs) > 1
     ncols = 2 if sweep else 1
     fig, axes = plt.subplots(1, ncols, figsize=(6.0 * ncols, 4.2))
@@ -514,6 +573,44 @@ def make_figure(runs, label, stem, dpi):
 
     fig.suptitle("POTIM validation: %s" % label, fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
+    for ext in ("png", "pdf"):
+        fig.savefig("%s.%s" % (stem, ext), dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+
+    if any(r["t_mean"] is not None for r in runs):
+        make_temp_figure(runs, label, stem + "_temp", dpi)
+
+
+def make_temp_figure(runs, label, stem, dpi):
+    """The full temperature trace of each run, with the mean over the
+    averaging window drawn across it. The whole trajectory is shown so the
+    initial settling is visible, but the mean is taken only over the window,
+    since that is the portion the dipole moments are taken from."""
+    colors = plt.cm.viridis(np.linspace(0.05, 0.85, len(runs)))
+    fig, ax = plt.subplots(figsize=(6.0, 4.2))
+
+    for r, c in zip(runs, colors):
+        if r["t_mean"] is None:
+            continue
+        tsteps = np.arange(1, r["temps"].size + 1)
+        ax.plot(tsteps, r["temps"], color=c, linewidth=0.7, alpha=0.55)
+        ax.plot(tsteps[r["temp_start"]:],
+                np.full(r["temps"].size - r["temp_start"], r["t_mean"]),
+                color=c, linewidth=1.8, linestyle="--",
+                label=(r"POTIM = %.2f fs, $\langle T \rangle$ = "
+                       r"%.1f $\pm$ %.1f K"
+                       % (r["potim"], r["t_mean"], r["t_std"])))
+    if len(runs) == 1:
+        ax.axvline(runs[0]["temp_start"], color="0.5", linewidth=0.9,
+                   linestyle=":")
+
+    ax.set_xlabel("Ionic step")
+    ax.set_ylabel("Temperature (K)")
+    ax.set_title("Temperature, %s" % label)
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=8, frameon=False)
+
+    fig.tight_layout()
     for ext in ("png", "pdf"):
         fig.savefig("%s.%s" % (stem, ext), dpi=dpi, bbox_inches="tight")
     plt.close(fig)
